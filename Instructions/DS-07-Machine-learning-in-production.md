@@ -1,4 +1,9 @@
-# Exercise 07 - Train a scalable Machine Learning Model using Azure Databricks
+---
+lab:
+    title: 'Train a scalable Machine Learning Model using Azure Databricks'
+---
+
+# Train a scalable Machine Learning Model using Azure Databricks
  
 ## Objective
 Train a scalable machine learning model using Azure Databricks to predict customer churn based on a sample dataset.
