@@ -7,7 +7,7 @@ lab:
 
 Training a machine learning model using Azure Databricks involves leveraging a unified analytics platform that provides a collaborative environment for data processing, model training, and deployment. Azure Databricks integrates with MLflow to manage the machine learning lifecycle, including experiment tracking and model serving.
 
-This exercise should take approximately **45** minutes to complete.
+This exercise should take approximately **20** minutes to complete.
 
 ## Before you start
 
@@ -81,7 +81,7 @@ You're going to run code that uses the Spark MLLib library to train a machine le
 1. In the sidebar, use the **(+) New** link to create a **Notebook**.
 1. Change the default notebook name (**Untitled Notebook *[date]***) to **Machine Learning** and in the **Connect** drop-down list, select your cluster if it is not already selected. If the cluster is not running, it may take a minute or so to start.
 
-## Ingest data
+## Ingest and prepare the data
 
 The scenario for this exercise is based on observations of penguins in Antarctica, with the goal of training a machine learning model to predict the species of an observed penguin based on its location and body measurements.
 
@@ -127,169 +127,10 @@ Network](https://lternet.edu/).
    test = splits[1]
    print ("Training Rows:", train.count(), " Testing Rows:", test.count())
     ```
-
-## Perform feature engineering
-
-Having cleansed the raw data, a data scientists typically perform some additional work to prepare it for model training. This process is commonly known as *feature engineering*, and involves iteratively optimizing the features in the training dataset to produce the best possible model. The specific feature modifications required depends on the data and the desired model, but there are some common feature engineering tasks you should become familiar with.
-
-### Encode categorical features
-
-Machine learning algorithms are usually based on finding mathematical relationships between features and labels. That means that its usually best to define the features in your training data as *numeric* values. In some cases, you may have some features that are *categorical* rather than numeric, and which are expressed as strings - for example, the name of the island where the penguin observation occurred in our dataset. However, most algorithms expect numeric features; so these string-based categorical values need to be *encoded* as numbers. In this case, we'll use a **StringIndexer** from the **Spark MLLib** library to encode the island name as a numeric value by assigning a unique integer index for each discrete island name.
-
-1. Run the following code to encode the **Island** categorical column values as numeric indexes.
-
-    ```python
-   from pyspark.ml.feature import StringIndexer
-
-   indexer = StringIndexer(inputCol="Island", outputCol="IslandIdx")
-   indexedData = indexer.fit(train).transform(train).drop("Island")
-   display(indexedData)
-    ```
-
-    In the results, you should see that instead of an island name, each row now has an **IslandIdx** column with an integer value representing the island on which the observation was recorded.
-
-### Normalize (scale) numeric features
-
-Now let's turn our attention to the numeric values in our data. These values (**CulmenLength**, **CulmenDepth**, **FlipperLength**, and **BodyMass**) all represent measurements of one sort or another, but they're in different scales. When training a model, the units of measurement aren't as important as the relative differences across different observations, and features that are represented by larger numbers can often dominate the model training algorithm - skewing the importance of the feature when calculating a prediction. To mitigate this, it's common to *normalize* the numeric feature values so they're all on the same relative scale (for example, a decimal value between 0.0 and 1.0).
-
-The code we'll use to do this is a little more involved than the categorical encoding we did previously. We need to scale multiple column values at the same time, so the technique we use is to create a single column containing a *vector* (essentially an array) of all the numeric features, and then apply a scaler to produce a new vector column with the equivalent normalized values.
-
-1. Use the following code to normalize the numeric features and see a comparison of the pre-normalized and normalized vector columns.
-
-    ```python
-   from pyspark.ml.feature import VectorAssembler, MinMaxScaler
-
-   # Create a vector column containing all numeric features
-   numericFeatures = ["CulmenLength", "CulmenDepth", "FlipperLength", "BodyMass"]
-   numericColVector = VectorAssembler(inputCols=numericFeatures, outputCol="numericFeatures")
-   vectorizedData = numericColVector.transform(indexedData)
-   
-   # Use a MinMax scaler to normalize the numeric values in the vector
-   minMax = MinMaxScaler(inputCol = numericColVector.getOutputCol(), outputCol="normalizedFeatures")
-   scaledData = minMax.fit(vectorizedData).transform(vectorizedData)
-   
-   # Display the data with numeric feature vectors (before and after scaling)
-   compareNumerics = scaledData.select("numericFeatures", "normalizedFeatures")
-   display(compareNumerics)
-    ```
-
-    The **numericFeatures** column in the results contains a vector for each row. The vector includes four unscaled numeric values (the original measurements of the penguin). You can use the **&#9656;** toggle to see the discrete values more clearly.
     
-    The **normalizedFeatures** column also contains a vector for each penguin observation, but this time the values in the vector are normalized to a relative scale based on the minimum and maximum values for each measurement.
+## Run a pipeline to preprocess the data and train a ML model
 
-### Prepare features and labels for training
-
-Now, let's bring everything together and create a single column containing all of the features (the encoded categorical island name and the normalized penguin measurements), and another column containing the class label we want to train a model to predict (the penguin species).
-
-1. Run the following code:
-
-    ```python
-   featVect = VectorAssembler(inputCols=["IslandIdx", "normalizedFeatures"], outputCol="featuresVector")
-   preppedData = featVect.transform(scaledData)[col("featuresVector").alias("features"), col("Species").alias("label")]
-   display(preppedData)
-    ```
-
-    The **features** vector contains five values (the encoded island and the normalized culmen length, culmen depth, flipper length, and body mass). The label contains a simple integer code that indicates the class of penguin species.
-
-## Train a machine learning model
-
-Now that the training data is prepared, you can use it to train a model. Models are trained using an *algorithm* that tries to establish a relationship between the features and labels. Since in this case you want to train a model that predicts a category of *class* , you need to use a *classification* algorithm. There are many algorithms for classification - let's start with a well-establish one: logistic regression, which iteratively attempts to find the optimal coefficients that can be applied to the features data in a logistic calculation that predicts the probability for each class label value. To train the model, you will fit the logistic regression algorithm to the training data.
-
-1. Run the following code to train a model.
-
-    ```python
-   from pyspark.ml.classification import LogisticRegression
-
-   lr = LogisticRegression(labelCol="label", featuresCol="features", maxIter=10, regParam=0.3)
-   model = lr.fit(preppedData)
-   print ("Model trained!")
-    ```
-
-    Most algorithms support parameters that give you some control over the way the model is trained. In this case, the logistic regression algorithm require you to identify the column containing the features vector and the column containing the known label; and also enables you to specify the maximum number of iterations performed to find optimal coeficients for the logistic calculation, and a regularization parameter that is used to prevent the model from *overfitting* (in other words, establishing a logistic calculation that works well with the training data, but which doesn't generalize well when applied to new data).
-
-## Test the model
-
-Now that you have a trained model, you can test it with the data you held back. Before you can do this, you need to perform the same feature engineering transformations to the test data as you applied to the training data (in this case, encode the island name and normalize the measurements). Then, you can use the model to predict labels for the features in the test data and compare the predicted labels to the actual known labels.
-
-1. Use the following code to prepare the test data and then generate predictions:
-
-    ```python
-   # Prepare the test data
-   indexedTestData = indexer.fit(test).transform(test).drop("Island")
-   vectorizedTestData = numericColVector.transform(indexedTestData)
-   scaledTestData = minMax.fit(vectorizedTestData).transform(vectorizedTestData)
-   preppedTestData = featVect.transform(scaledTestData)[col("featuresVector").alias("features"), col("Species").alias("label")]
-   
-   # Get predictions
-   prediction = model.transform(preppedTestData)
-   predicted = prediction.select("features", "probability", col("prediction").astype("Int"), col("label").alias("trueLabel"))
-   display(predicted)
-    ```
-
-    The results include the following columns:
-    
-    - **features**: The prepared features data from the test dataset.
-    - **probability**: The probability calculated by the model for each class. This consists of a vector containing three probability values (because there are three classes) which add up to a total of 1.0 (its assumed that there's a 100% probability that the penguin belongs to *one* of the three species classes).
-    - **prediction**: The predicted class label (the one with the highest probability).
-    - **trueLabel**: The actual known label value from the test data.
-    
-    To evaluate the effectiveness of the model, you could simply compare the predicted and true labels in these results. However, you can get more meaningful metrics by using a model evaluator - in this case, a multiclass (because there are multiple possible class labels) classification evaluator.
-
-1. Use the following code to get evaluation metrics for a classification model based on the results from the test data:
-
-    ```python
-   from pyspark.ml.evaluation import MulticlassClassificationEvaluator
-   
-   evaluator = MulticlassClassificationEvaluator(labelCol="label", predictionCol="prediction")
-   
-   # Simple accuracy
-   accuracy = evaluator.evaluate(prediction, {evaluator.metricName:"accuracy"})
-   print("Accuracy:", accuracy)
-   
-   # Individual class metrics
-   labels = [0,1,2]
-   print("\nIndividual class metrics:")
-   for label in sorted(labels):
-       print ("Class %s" % (label))
-   
-       # Precision
-       precision = evaluator.evaluate(prediction, {evaluator.metricLabel:label,
-                                                   evaluator.metricName:"precisionByLabel"})
-       print("\tPrecision:", precision)
-   
-       # Recall
-       recall = evaluator.evaluate(prediction, {evaluator.metricLabel:label,
-                                                evaluator.metricName:"recallByLabel"})
-       print("\tRecall:", recall)
-   
-       # F1 score
-       f1 = evaluator.evaluate(prediction, {evaluator.metricLabel:label,
-                                            evaluator.metricName:"fMeasureByLabel"})
-       print("\tF1 Score:", f1)
-   
-   # Weighted (overall) metrics
-   overallPrecision = evaluator.evaluate(prediction, {evaluator.metricName:"weightedPrecision"})
-   print("Overall Precision:", overallPrecision)
-   overallRecall = evaluator.evaluate(prediction, {evaluator.metricName:"weightedRecall"})
-   print("Overall Recall:", overallRecall)
-   overallF1 = evaluator.evaluate(prediction, {evaluator.metricName:"weightedFMeasure"})
-   print("Overall F1 Score:", overallF1)
-    ```
-
-    The evaluation metrics that are calculated for multiclass classification include:
-    
-    - **Accuracy**: The proportion of overall predictions that were correct.
-    - Per-class metrics:
-      - **Precision**: The proportion of predictions of this class that were correct.
-      - **Recall**: The proportion of actual instances of this class that were correctly predicted.
-      - **F1 score**: A combined metric for precision and recall
-    - Combined (weighted) precision, recall, and F1 metrics for all classes.
-    
-    > **Note**: It may initially seem like the overall accuracy metric provides the best way to evaluate a model's predictive performance. However, consider this. Suppose Gentoo penguins make up 95% of the penguin population in your study location. A model that always predicts the label **1** (the class for Gentoo) will have an accuracy of 0.95. That doesn't mean it's a great model for predicting a penguin species based on the features! That's why data scientists tend to explore additional metrics to get a better understanding of how well a classification model predicts for each possible class label.
-
-## Use a pipeline
-
-You trained your model by performing the required feature engineering steps and then fitting an algorithm to the data. To use the model with some test data to generate predictions (referred to as *inferencing*), you had to apply the same feature engineering steps to the test data. A more efficient way to build and use models is to encapsulate the transformers used to prepare the data and the model used to train it in a *pipeline*.
+Before training your model, you need to perform feature engineering steps and then fit an algorithm to the data. To use the model with some test data to generate predictions, you have to apply the same feature engineering steps to the test data. A more efficient way to build and use models is to encapsulate the transformers used to prepare the data and the model used to train it in a *pipeline*.
 
 1. Use the following code to create a pipeline that encapsulates the data preparation and model training steps:
 
@@ -318,52 +159,13 @@ You trained your model by performing the required feature engineering steps and 
 
     Since the feature engineering steps are now encapsulated in the model trained by the pipeline, you can use the model with the test data without needing to apply each transformation (they'll be applied automatically by the model).
 
-1. Use the following code to apply the pipeline to the test data:
+1. Use the following code to apply the pipeline to the test data and evaluate the model:
 
     ```python
    prediction = model.transform(test)
    predicted = prediction.select("Features", "probability", col("prediction").astype("Int"), col("Species").alias("trueLabel"))
    display(predicted)
-    ```
 
-## Try a different algorithm
-
-So far you've trained a classification model by using the logistic regression algorithm. Let's change that stage in the pipeline to try a different algorithm.
-
-1. Run the following code to create a pipeline that uses a Decision tree algorithm:
-
-    ```python
-   from pyspark.ml import Pipeline
-   from pyspark.ml.feature import StringIndexer, VectorAssembler, MinMaxScaler
-   from pyspark.ml.classification import DecisionTreeClassifier
-   
-   catFeature = "Island"
-   numFeatures = ["CulmenLength", "CulmenDepth", "FlipperLength", "BodyMass"]
-   
-   # Define the feature engineering and model steps
-   catIndexer = StringIndexer(inputCol=catFeature, outputCol=catFeature + "Idx")
-   numVector = VectorAssembler(inputCols=numFeatures, outputCol="numericFeatures")
-   numScaler = MinMaxScaler(inputCol = numVector.getOutputCol(), outputCol="normalizedFeatures")
-   featureVector = VectorAssembler(inputCols=["IslandIdx", "normalizedFeatures"], outputCol="Features")
-   algo = DecisionTreeClassifier(labelCol="Species", featuresCol="Features", maxDepth=10)
-   
-   # Chain the steps as stages in a pipeline
-   pipeline = Pipeline(stages=[catIndexer, numVector, numScaler, featureVector, algo])
-   
-   # Use the pipeline to prepare data and fit the model algorithm
-   model = pipeline.fit(train)
-   print ("Model trained!")
-    ```
-
-    This time, the pipeline includes the same feature preparation stages as before but uses a *Decision Tree* algorithm to train the model.
-    
-   1. Run the following code to use the new pipeline with the test data:
-
-    ```python
-   # Get predictions
-   prediction = model.transform(test)
-   predicted = prediction.select("Features", "probability", col("prediction").astype("Int"), col("Species").alias("trueLabel"))
-   
    # Generate evaluation metrics
    from pyspark.ml.evaluation import MulticlassClassificationEvaluator
    
@@ -400,38 +202,50 @@ So far you've trained a classification model by using the logistic regression al
    overallRecall = evaluator.evaluate(prediction, {evaluator.metricName:"weightedRecall"})
    print("Overall Recall:", overallRecall)
    overallF1 = evaluator.evaluate(prediction, {evaluator.metricName:"weightedFMeasure"})
-   print("Overall F1 Score:", overallF1)
+   print("Overall F1 Score:", overallF1) 
     ```
 
-## Save the model
+## Register and deploy the model
 
-In reality, you'd iteratively try training the model with different algorithms (and parameters) to find the best model for your data. For now, we'll stick with the decision trees model we've trained. Let's save it so we can use it later with some new penguin observations.
+You've already logged the model trained by each experiment run when you ran the pipeline. You can also *register* models and deploy them so they can be served to client applications.
 
-1. Use the following code to save the model:
+> **Note**: Model serving is only supported in Azure Databricks *Premium* workspaces, and is restricted to [certain regions](https://learn.microsoft.com/azure/databricks/resources/supported-regions).
 
-    ```python
-   model.save("/models/penguin.model")
+1. Select **Experiments** on the left pane.
+1. Select the experiment generated with your notebook's name and view the details page for the most recent experiment run.
+1. Use the **Register Model** button to register the model that was logged in that experiment and when prompted, create a new model named **Penguin Predictor**.
+1. When the model has been registered, view the **Models** page (in the navigation bar on the left) and select the **Penguin Predictor** model.
+1. In the page for the **Penguin Predictor** model, use the **Use model for inference** button to create a new real-time endpoint with the following settings:
+    - **Model**: Penguin Predictor
+    - **Model version**: 1
+    - **Endpoint**: predict-penguin
+    - **Compute size**: Small
+
+    The serving endpoint is hosted in a new cluster, which it may take several minutes to create.
+  
+1. When the endpoint has been created, use the **Query endpoint** button at the top right to open an interface from which you can test the endpoint. Then in the test interface, on the **Browser** tab, enter the following JSON request and use the **Send Request** button to call the endpoint and generate a prediction.
+
+    ```json
+    {
+      "dataframe_records": [
+      {
+         "Island": "Biscoe",
+         "CulmenLength": 48.7,
+         "CulmenDepth": 14.1,
+         "FlipperLength": 210,
+         "BodyMass": 4450
+      }
+      ]
+    }
     ```
 
-    Now, when you've been out and spotted a new penguin, you can load the saved model and use it to predict the penguin's species based on your measurements of its features. Using a model to generate predictions from new data is called *inferencing*.
+1. Experiment with a few different values for the penguin features and observe the results that are returned. Then, close the test interface.
 
-1. Run the following code to load the model and use it to predict the species for a new penguin observation:
+## Delete the endpoint
 
-    ```python
-   from pyspark.ml.pipeline import PipelineModel
+When the endpoint is not longer required, you should delete it to avoid unnecessary costs.
 
-   persistedModel = PipelineModel.load("/models/penguin.model")
-   
-   newData = spark.createDataFrame ([{"Island": "Biscoe",
-                                     "CulmenLength": 47.6,
-                                     "CulmenDepth": 14.5,
-                                     "FlipperLength": 215,
-                                     "BodyMass": 5400}])
-   
-   
-   predictions = persistedModel.transform(newData)
-   display(predictions.select("Island", "CulmenDepth", "CulmenLength", "FlipperLength", "BodyMass", col("prediction").alias("PredictedSpecies")))
-    ```
+In the **predict-penguin** endpoint page, in the **&#8285;** menu, select **Delete**.
 
 ## Clean up
 
@@ -440,79 +254,3 @@ In Azure Databricks portal, on the **Compute** page, select your cluster and sel
 If you've finished exploring Azure Databricks, you can delete the resources you've created to avoid unnecessary Azure costs and free up capacity in your subscription.
 
 > **More information**: For more information see the [Spark MLLib documentation](https://spark.apache.org/docs/latest/ml-guide.html).
-## Objective
-Train a scalable machine learning model using Azure Databricks to predict customer churn based on a sample dataset.
- 
-### Step 1 - Set up Azure Databricks
-- Log in to the Azure portal.
-- Create an Azure Databricks workspace.
-- Launch the workspace and create a new cluster with appropriate configurations for your workload (e.g., size, autoscaling, version).
- 
-### Step 2 - Upload Dataset to Azure Databricks
-- Go to your Azure Databricks workspace.
-- Navigate to the Data tab and upload your CSV dataset.
-- Verify that the dataset is correctly uploaded and accessible.
- 
-### Step 3 - Explore Data and Preprocessing:
-- Open a new notebook in Azure Databricks.
-- Load the dataset into a DataFrame
- 
-```python
-    df = spark.read.csv("/FileStore/tables/customer_churn.csv", header=True, inferSchema=True)
-```
- 
-- Explore the data using descriptive statistics, histograms, and other visualizations to understand the features and their distributions.
-- Preprocess the data as needed (e.g., handle missing values, encode categorical variables, scale numeric features).
- 
-### Step 4 - Split Data into Training and Test Sets:
-- Split the dataset into training and test sets using a common ratio like 80:20
- 
-```python
-    train_df, test_df = df.randomSplit([0.8, 0.2], seed=42)
-```
- 
-### Step 5 - Choose a Machine Learning Algorithm:
-- Select a machine learning algorithm suitable for binary classification tasks such as logistic regression, random forests, or gradient boosting.
- 
-### Step 6 - Train the Machine Learning Model:
-- Import the necessary libraries and initialize the chosen algorithm
- 
-```python
-    from pyspark.ml.classification import RandomForestClassifier
-    # Initialize Random Forest classifier
-    rf = RandomForestClassifier(featuresCol='features', labelCol='churn_status')
- 
-    #Fit the model on the training data
-    model = rf.fit(train_df)
-```
- 
-### Step 7 - Evaluate Model Performance:
-- Make predictions on the test data using the trained model
- 
-```python
-    predictions = model.transform(test_df)
-```
- 
-- Evaluate the model's performance using metrics such as accuracy, precision, recall, and F1-score.
- 
-```python
-    from pyspark.ml.evaluation import BinaryClassificationEvaluator
- 
-    evaluator = BinaryClassificationEvaluator(labelCol='churn_status')
-    accuracy = evaluator.evaluate(predictions)
-    print(f"Accuracy: {accuracy}")
-```
- 
-### Step 8 - Optimize and Tune the Model (Optional):
-- If desired, perform hyperparameter tuning and optimization using techniques like cross-validation or grid search to improve model performance.
- 
-### Step 9 - Save the Trained Model:
-- Once satisfied with the model performance, save the trained model for future use or deployment.
- 
-```python
-    model.save("/FileStore/models/customer_churn_model")
-```
-### Step 10 - Deployment (Optional):
-- If you intend to deploy the model for production use, follow Azure Databricks' deployment guidelines or integrate the model into your desired application or pipeline.
-### Step 11 - Cleanup (Optional):
-- Clean up any unnecessary resources such as temporary dataframes, unused clusters, or files to optimize cost and workspace organization.
