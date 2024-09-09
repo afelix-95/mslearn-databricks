@@ -166,7 +166,7 @@ Azure Databricks is a distributed processing platform that uses Apache Spark *cl
         model="gpt-35-turbo",
         artifact_path="gpt-35-turbo-model",
         system_prompt=system_prompt,
-        task=openai.chat.completions  # Change the task type to "llm/v1/chat"
+        task=openai.chat.completions
     )
 
     print(f"Model logged in run {model_info.run_id} at {model_info.model_uri}")
@@ -182,18 +182,27 @@ Azure Databricks is a distributed processing platform that uses Apache Spark *cl
     from flask import Flask, request, jsonify
     import mlflow.pyfunc
 
+    model_uri = 'your_model_uri'
+    model = mlflow.pyfunc.load_model(model_uri)
+
+    def predict(data):
+        return model.predict(data)
+
+    from flask import Flask, request, jsonify
+
     app = Flask(__name__)
 
     @app.route('/predict', methods=['POST'])
-    def predict():
+    def predict_endpoint():
         data = request.json
-        model = mlflow.pyfunc.load_model("model")
-        prediction = model.predict(data["input"])
-        return jsonify(prediction)
+        predictions = predict(data)
+        return jsonify(predictions.tolist())
 
     if __name__ == '__main__':
         app.run(host='0.0.0.0', port=5000)
      ```
+
+Note that `your_model_uri` should be replaced with the URI printed in the last cell of the first notebook.
 
 ## Monitor the model
 
