@@ -111,7 +111,7 @@ Azure Databricks is a distributed processing platform that uses Apache Spark *cl
 4. In the first code cell, enter and run the following code to install the necessary libraries:
    
      ```python
-    %pip install azure-ai-openai flask
+    %pip install openai flask
      ```
 
 5. After the installation is complete, restart the kernel in a new cell:
@@ -122,13 +122,27 @@ Azure Databricks is a distributed processing platform that uses Apache Spark *cl
 
 ## Log the LLM using MLflow
 
+1. In a new cell, run the following code with the access information you copied at the beginning of this exercise to assign persistent environment variables for authentication when using Azure OpenAI resources:
+
+     ```python
+    import os
+
+    os.environ["AZURE_OPENAI_API_KEY"] = "your_openai_api_key"
+    os.environ["AZURE_OPENAI_ENDPOINT"] = "your_openai_endpoint"
+    os.environ["AZURE_OPENAI_API_VERSION"] = "2023-03-15-preview"
+     ```
+     
 1. In a new cell, run the following code to initialize your Azure OpenAI client:
 
      ```python
-    from azure.ai.openai import OpenAIClient
+    import os
+    from openai import AzureOpenAI
 
-    client = OpenAIClient(api_key="<Your_API_Key>")
-    model = client.get_model("gpt-3.5-turbo")
+    client = AzureOpenAI(
+        azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT"),
+        api_key = os.getenv("AZURE_OPENAI_API_KEY"),
+        api_version = os.getenv("AZURE_OPENAI_API_VERSION")
+    )
      ```
 
 1. In a new cell, run the following code to initialize MLflow tracking:     
@@ -143,7 +157,20 @@ Azure Databricks is a distributed processing platform that uses Apache Spark *cl
 1. In a new cell, run the following code to log the model:
 
      ```python
-    mlflow.pyfunc.log_model("model", python_model=model)
+    import mlflow.openai
+    import openai
+
+    system_prompt = "Answer the following question in two sentences"
+
+    model_info = mlflow.openai.log_model(
+        model="gpt-35-turbo",
+        artifact_path="gpt-35-turbo-model",
+        system_prompt=system_prompt,
+        task=openai.chat.completions  # Change the task type to "llm/v1/chat"
+    )
+
+    print(f"Model logged in run {model_info.run_id} at {model_info.model_uri}")
+
     mlflow.end_run()
      ```
 
